@@ -156,24 +156,46 @@ Puisque les fours ne transmettent aucune donnée, l'outil sert de **guide de tra
 * **Résilience Réseau Local :**
   * L'écran de cuisine continue de fonctionner et de stocker les clics manuels même en cas de micro-coupure internet, puis se synchronise dès le rétablissement de la connexion.
 # Click Eat — prototype interactif
+# Click Eat — serveur et base de données
 
-Prototype en français d’une application click & collect pour pizzeria. Ouvrir l’application via un serveur HTTP servant `dist/` (ex. `python3 -m http.server 4173 --directory dist`). Aucun outil de compilation nécessaire.
+## Démarrage local
 
-## Parcours
+Node.js >= 22.13 (Node 24 conseillé), sans dépendance npm externe.
 
-- Tableau de bord, commandes et suivi des notifications simulées.
-- Boutique : quatre recettes, panier, contrôle BOM, choix de créneau et verrou de cinq minutes, paiement simulé.
-- Cuisine : lancement à retrait moins 12 minutes, préparation, enfournement manuel, commande prête, retrait et retard de cinq minutes.
-- Manager : ajustement des stocks, rupture immédiate, quota global par dix minutes, pause de 15/30/60 minutes.
-- Données de démonstration conservées dans le navigateur. Réinitialisation dans Capacité & service.
-- Cache hors connexion après la première ouverture réussie ; les actions restent enregistrées localement. Les onglets du même navigateur reçoivent les mises à jour.
+```sh
+npm start
+```
 
-## Limites intentionnelles
+Ouvrir http://127.0.0.1:4173. Le serveur HTTP fournit l’interface et l’API. La base SQLite persistante est créée dans `data/click-eat.sqlite` (ignorée par Git). `PORT`, `HOST` et `DATA_DIR` sont configurables. L’écoute est limitée à la machine locale par défaut. Ne pas exposer ce serveur directement sur Internet sans authentification et HTTPS.
 
-Ce prototype n’est pas un système de production : aucun paiement, SMS ou remboursement réel, pas d’authentification par rôle, de base serveur, de WebSockets, ni de synchronisation entre appareils. Les réservations ne sont pas des transactions distribuées ; ne pas utiliser pour la vente réelle ou des utilisateurs concurrents. Une réservation simultanée par profil navigateur. Le quota est global pour les huit créneaux affichés, non paramétrable individuellement. Recettes et temps théoriques fixes. Les performances 1 000 visiteurs / 4 000 commandes ne sont pas certifiées. Les délais ajoutés modifient l’estimation client sans recalcul global du planning. Les stocks des commandes annulées sont réintégrés uniquement avant préparation.
+## Fonctionnement
 
-Pour la production : stockage transactionnel et verrouillage atomique stocks/créneaux, réservations par session avec expiration serveur, traitement idempotent des webhooks de paiement, authentification/autorisation, file événementielle, synchronisation des actions cuisine hors ligne et prestataire de notifications.
+- Le serveur est la source de vérité pour commandes, stocks, quotas, pauses et réservations par session.
+- Les validations utilisent un numéro de révision atomique, avec réessai en cas de modification concurrente : deux paniers ne peuvent pas réserver la dernière ressource simultanément.
+- Réservations de cinq minutes, expiration évaluée côté serveur à chaque lecture et écriture. Les réservations expirées ne consomment plus de capacité ou de stock.
+- Les requêtes ont un identifiant idempotent conservé sept jours : une répétition réseau ne crée pas une deuxième commande ou un deuxième passage en cuisine.
+- Les écrans actualisent les données toutes les deux secondes. Les actions cuisine sans réseau sont conservées dans une file locale et réessayées. Un conflit de statut est signalé au lieu d’avancer deux fois.
+- Le paiement demeure simulé. Aucun SMS ou remboursement réel n’est envoyé.
+- La base démarre sans commande fictive, avec les stocks de départ du prototype. Les anciennes données locales ne sont pas importées automatiquement.
+
+## API
+
+`GET /api/health`, `GET /api/state`, `POST /api/action`.
+
+Le POST reçoit `{requestId, action, payload}`. Actions : `reserve`, `release`, `pay`, `advance`, `delay`, `cancel`, `stock`, `capacity`, `pause`. Les mutations nécessitent une origine identique, le type JSON et l’en-tête `X-Click-Eat: 1`. Session navigateur dans un cookie HttpOnly, SameSite=Strict et Secure sous HTTPS.
+
+## Hébergement
+
+`npm run build` produit un Worker Cloudflare dans `dist/server/index.js` et les ressources navigateur dans `dist/client`. Le serveur utilise la liaison D1 `DB` pour la base et `ASSETS` pour les ressources. Sites conserve son accès privé. Le schéma version initiale est créé sans destruction au premier accès à l’API.
+
+La base utilise une ligne `service_state` avec contenu JSON, numéro de révision et comparaison atomique de révision. Cette première implémentation garantit la cohérence du prototype ; elle n’est pas une validation de la charge cible. Une normalisation des tables et des essais de charge sont nécessaires pour l’objectif de 4 000 commandes/soir et 1 000 visiteurs concurrents. Le mécanisme actuel transfère un instantané complet du service et ne repose pas sur WebSockets.
+
+L’accès privé Sites protège l’ensemble de l’application ; il n’y a pas encore de séparation de rôles client/cuisine/manager. Ne pas rendre le site public avant cette séparation. Les prix et recettes restent fixes, les quotas sont globaux et les retards ne réordonnancent pas toute la capacité.
+
+## Vérification
+
+`npm test` : concurrence, réservations, expiration, paiement idempotent, protection des sessions, cycle cuisine, validation des entrées et persistance.
 
 ## Photo
 
-Jemima Whyles / Unsplash — https://unsplash.com/photos/a-pizza-sitting-in-a-stone-oven-with-flames-coming-out-of-it-KUdkIGMGnhM — licence Unsplash.
+Jemima Whyles / Unsplash : https://unsplash.com/photos/a-pizza-sitting-in-a-stone-oven-with-flames-coming-out-of-it-KUdkIGMGnhM (licence Unsplash).
