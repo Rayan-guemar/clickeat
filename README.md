@@ -186,7 +186,7 @@ Le POST reçoit `{requestId, action, payload}`. Actions : `reserve`, `release`, 
 
 ## Hébergement
 
-`npm run build` produit un Worker Cloudflare dans `dist/server/index.js` et les ressources navigateur dans `dist/client`. Le serveur utilise la liaison D1 `DB` pour la base et `ASSETS` pour les ressources. Sites conserve son accès privé. Le schéma version initiale est créé sans destruction au premier accès à l’API.
+`npm run build` produit un Worker Cloudflare dans `dist/server/index.js` et les ressources navigateur dans `dist/client`. Le serveur utilise la liaison D1 `DB` pour la base et `ASSETS` pour les ressources. Sites conserve son accès privé. Les migrations versionnées dans `drizzle/` créent le schéma avant publication. Le serveur local initialise le même schéma SQLite.
 
 La base utilise une ligne `service_state` avec contenu JSON, numéro de révision et comparaison atomique de révision. Cette première implémentation garantit la cohérence du prototype ; elle n’est pas une validation de la charge cible. Une normalisation des tables et des essais de charge sont nécessaires pour l’objectif de 4 000 commandes/soir et 1 000 visiteurs concurrents. Le mécanisme actuel transfère un instantané complet du service et ne repose pas sur WebSockets.
 
