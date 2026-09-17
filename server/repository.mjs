@@ -2,7 +2,7 @@ import {fresh,apply,snapshot,AppError} from './domain.mjs';
 export const SCHEMA=`CREATE TABLE IF NOT EXISTS service_state (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL DEFAULT 0, data TEXT NOT NULL CHECK(json_valid(data)));`;
 export class Repository{
  constructor(db){this.db=db;}
- async init(){await this.db.exec(SCHEMA);await this.db.prepare('INSERT OR IGNORE INTO service_state(id,revision,data) VALUES(1,0,?)').bind(JSON.stringify(fresh())).run();}
+ async init(){await this.db.prepare('INSERT OR IGNORE INTO service_state(id,revision,data) VALUES(1,0,?)').bind(JSON.stringify(fresh())).run();}
  async read(){const row=await this.db.prepare('SELECT revision,data FROM service_state WHERE id=1').first();if(!row)throw new Error('Database not initialized');return{revision:row.revision,state:JSON.parse(row.data)};}
  async get(session){const {state,revision}=await this.read();return snapshot(state,session,revision);}
  async mutate(session,requestId,action,payload){

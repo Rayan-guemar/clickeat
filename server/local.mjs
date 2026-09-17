@@ -3,9 +3,11 @@ import {createServer} from 'node:http';
 import {readFile,mkdir} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
 import {api} from './api.mjs';
+import {SCHEMA} from './repository.mjs';
 const dir=resolve(process.env.DATA_DIR||'data');await mkdir(dir,{recursive:true});
 const sql=new DatabaseSync(resolve(dir,'click-eat.sqlite'));sql.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;');
 const db={exec:async s=>sql.exec(s),prepare(s){const statement=(values=[])=>({bind(...v){return statement(v)},first:async()=>sql.prepare(s).get(...values)||null,run:async()=>sql.prepare(s).run(...values)});return statement()}};
+await db.exec(SCHEMA);
 const handle=api(db),root=resolve('dist');
 const mime={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.jpg':'image/jpeg'};
 const server=createServer(async(req,res)=>{try{
