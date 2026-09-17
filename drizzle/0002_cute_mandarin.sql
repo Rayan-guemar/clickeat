@@ -1,0 +1,1 @@
+CREATE INDEX `idx_reservation_queue_visitor_sequence` ON `reservation_queue` (`visitor_id`,`sequence`);

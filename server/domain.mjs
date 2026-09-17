@@ -5,7 +5,18 @@ export const count=items=>Object.values(items).reduce((a,b)=>a+b,0);
 export function required(items){const out={};for(const recipe of recipes)for(const [id,n] of Object.entries(recipe.bom))out[id]=(out[id]||0)+n*(items[recipe.id]||0);return out;}
 export function fresh(){const s=initial();s.orders=[];s.notifications=[];s.next=1001;delete s.hold;s.holds={};s.receipts={};return s;}
 export function clean(s,now){for(const [id,h] of Object.entries(s.holds))if(h.expires<=now)delete s.holds[id];for(const [id,r] of Object.entries(s.receipts))if(r.at<now-7*86400000)delete s.receipts[id];const base=Math.ceil((now+12*60000)/600000)*600000;s.slots=Array.from({length:8},(_,i)=>base+i*600000);}
-export function snapshot(s,session,revision,now=Date.now()){clean(s,now);const other=Object.entries(s.holds).filter(([id])=>id!==session).map(([,h])=>h);const reservedOther={};for(const h of other)for(const [id,n] of Object.entries(required(h.items)))reservedOther[id]=(reservedOther[id]||0)+n;return {revision,serverTime:now,capacity:s.capacity,pausedUntil:s.pausedUntil,stock:s.stock,orders:s.orders.map(o=>({...o,client:o.session===session,session:undefined})),hold:s.holds[session]||null,notifications:s.notifications,slots:s.slots,reservedOther,slotHolds:Object.fromEntries(s.slots.map(t=>[t,other.filter(h=>h.slot===t).reduce((n,h)=>n+count(h.items),0)]))};}
+export function snapshot(s,visitorId,revision,now=Date.now(),role='client'){
+ clean(s,now);
+ const other=Object.entries(s.holds).filter(([id])=>id!==visitorId).map(([,h])=>h),reservedOther={};
+ for(const h of other)for(const [id,n] of Object.entries(required(h.items)))reservedOther[id]=(reservedOther[id]||0)+n;
+ const ownOrders=s.orders.filter(o=>o.session===visitorId);
+ const orders=(role==='manager'?s.orders:ownOrders).map(o=>({...o,client:o.session===visitorId,clientId:o.clientId||null,session:undefined}));
+ const availability=Object.fromEntries(recipes.map(r=>[r.id,Math.max(0,Math.min(...Object.entries(r.bom).map(([id,n])=>Math.floor((s.stock[id].qty-(reservedOther[id]||0)-(required(s.holds[visitorId]?.items||{})[id]||0))/n))))]));
+ return {revision,serverTime:now,role,clientId:visitorId,capacity:s.capacity,pausedUntil:s.pausedUntil,
+ ...(role==='manager'?{stock:s.stock,reservedOther,notifications:s.notifications}:{}),orders,availability,
+ hold:s.holds[visitorId]||null,slots:s.slots,slotLoads:Object.fromEntries(s.slots.map(t=>[t,used(s,t)])),
+ slotHolds:Object.fromEntries(s.slots.map(t=>[t,other.filter(h=>h.slot===t).reduce((n,h)=>n+count(h.items),0)]))};
+}
 function integer(n,min,max,label){if(!Number.isSafeInteger(n)||n<min||n>max)throw new AppError(label,400);return n;}
 function validateItems(items){if(!items||typeof items!=='object'||Array.isArray(items)||Object.keys(items).length===0)throw new AppError('Le panier est vide.',400);for(const [id,n] of Object.entries(items)){if(!recipes.some(r=>r.id===id))throw new AppError('Recette inconnue.',400);integer(n,1,50,'Quantité invalide.');}if(count(items)>50)throw new AppError('Maximum 50 pizzas par commande.',400);return items;}
 function available(s,items,skipSession){const need=required(items);for(const [session,h] of Object.entries(s.holds))if(session!==skipSession)for(const [id,n] of Object.entries(required(h.items)))need[id]=(need[id]||0)+n;return Object.entries(need).every(([id,n])=>s.stock[id].qty>=n);}
@@ -27,7 +38,7 @@ export function apply(s,action,payload,session,now=Date.now()){
   const name=typeof p.name==='string'?p.name.trim():'';if(!name||name.length>60)throw new AppError('Indiquez un prénom de 1 à 60 caractères.',400);
   if(!available(s,h.items,session))throw new AppError('Un ingrédient est passé en rupture. Annulez la réservation.');
   for(const [id,n] of Object.entries(required(h.items)))s.stock[id].qty-=n;
-  const id=s.next++;s.orders.push({id,name,items:h.items,slot:h.slot,status:'QUEUED',session,createdAt:now});delete s.holds[session];result={orderId:id};break;
+  const id=s.next++;s.orders.push({id,name,items:h.items,slot:h.slot,status:'QUEUED',session,clientId:session,sequence:h.sequence||null,receivedAt:h.receivedAt||now,createdAt:now});delete s.holds[session];result={orderId:id};break;
  }
  case 'advance': {
   const o=s.orders.find(o=>o.id===p.id);if(!o)throw new AppError('Commande introuvable.',404);
