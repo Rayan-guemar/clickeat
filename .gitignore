@@ -1,0 +1,6 @@
+data/*.sqlite*
+.env
+node_modules/
+dist/client/
+dist/server/
+dist/.openai/
