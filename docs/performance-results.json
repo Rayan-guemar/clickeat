@@ -1,0 +1,62 @@
+{
+  "measuredAt": "2026-09-30T08:29:27.609Z",
+  "environment": {
+    "node": "v24.20.0",
+    "platform": "darwin",
+    "arch": "x64",
+    "database": "SQLite WAL temporaire",
+    "transport": "HTTP boucle locale, générateur et serveur dans le même processus"
+  },
+  "orders": 4000,
+  "samples": [
+    {
+      "name": "Panier cumulé, séquentiel, 4000 commandes",
+      "requests": 100,
+      "concurrency": 1,
+      "p50_ms": 4.89,
+      "p95_ms": 9.14,
+      "p99_ms": 13.29,
+      "max_ms": 101.46,
+      "errors": 0,
+      "errorTypes": {},
+      "duration_ms": 638,
+      "target_ms": 200,
+      "all_under_target": true
+    },
+    {
+      "name": "Panier cumulé, 1000 clients simultanés, 4000 commandes",
+      "requests": 1000,
+      "concurrency": 1000,
+      "p50_ms": 2394.08,
+      "p95_ms": 7989.07,
+      "p99_ms": 8033.61,
+      "max_ms": 8043.04,
+      "errors": 125,
+      "errorTypes": {
+        "ETIMEDOUT": 125
+      },
+      "duration_ms": 8264,
+      "target_ms": 200,
+      "all_under_target": false
+    },
+    {
+      "name": "Pilotage, lecture de 4000 commandes",
+      "requests": 20,
+      "concurrency": 1,
+      "p50_ms": 119.8,
+      "p95_ms": 396.11,
+      "p99_ms": 580.73,
+      "max_ms": 580.73,
+      "errors": 0,
+      "errorTypes": {},
+      "duration_ms": 3470,
+      "target_ms": 200,
+      "all_under_target": false
+    }
+  ],
+  "limitations": [
+    "Ce test local ne valide pas les latences réseau ou Cloudflare D1 en production.",
+    "1000 requêtes simultanées ne simulent pas 1000 navigateurs avec polling et paiements.",
+    "Le temps HTTP du pilotage ne mesure pas le rendu DOM du navigateur."
+  ]
+}

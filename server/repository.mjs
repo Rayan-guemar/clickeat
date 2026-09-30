@@ -1,4 +1,4 @@
-import {fresh,apply,snapshot,AppError} from './domain.mjs';
+import {fresh,apply,snapshot,checkBasket,clean,count,AppError} from './domain.mjs';
 export const SCHEMA=`CREATE TABLE IF NOT EXISTS service_state (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL DEFAULT 0, data TEXT NOT NULL CHECK(json_valid(data)));
 CREATE TABLE IF NOT EXISTS visitors (id TEXT PRIMARY KEY NOT NULL, auth_key TEXT UNIQUE NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS reservation_queue (sequence INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, request_key TEXT UNIQUE NOT NULL, visitor_id TEXT NOT NULL, request_id TEXT NOT NULL, payload TEXT NOT NULL, received_at INTEGER NOT NULL);
@@ -7,6 +7,7 @@ export class Repository {
  constructor(db){this.db=db;}
  async init(){await this.db.prepare('INSERT OR IGNORE INTO service_state(id,revision,data) VALUES(1,0,?)').bind(JSON.stringify(fresh())).run();}
  async user(authKey,legacySession){
+  const existing=await this.db.prepare('SELECT id,created_at FROM visitors WHERE auth_key=?').bind(authKey).first();if(existing)return existing;
   const inserted=await this.db.prepare('INSERT OR IGNORE INTO visitors(id,auth_key,created_at) VALUES(?,?,?) RETURNING id').bind(crypto.randomUUID(),authKey,Date.now()).first();
   const visitor=await this.db.prepare('SELECT id,created_at FROM visitors WHERE auth_key=?').bind(authKey).first();
   if(inserted&&legacySession){for(let attempt=0;attempt<12;attempt++){const {state,revision}=await this.read();const old=state.orders.filter(o=>o.session===legacySession);if(!old.length&&!state.holds[legacySession])break;for(const o of old){o.session=visitor.id;o.clientId=visitor.id;}if(state.holds[legacySession]){state.holds[visitor.id]=state.holds[legacySession];delete state.holds[legacySession];}const saved=await this.db.prepare('UPDATE service_state SET data=?, revision=revision+1 WHERE id=1 AND revision=? RETURNING revision').bind(JSON.stringify(state),revision).first();if(saved)break;}}
@@ -20,6 +21,17 @@ export class Repository {
    : await this.db.prepare('SELECT sequence,visitor_id,request_id,request_key,received_at FROM reservation_queue WHERE visitor_id=? ORDER BY sequence DESC LIMIT 1').bind(visitorId).all();
   value.reservationQueue=(rows.results||rows).map(row=>{const receipt=state.receipts[row.request_key];return {sequence:row.sequence,clientId:row.visitor_id,requestId:row.request_id,receivedAt:row.received_at,status:receipt?(receipt.error?'REFUSED':'ACCEPTED'):row.sequence>(state.lastTicket||0)?'PENDING':'ARCHIVED',reason:receipt?.error?.message||null};});
   return value;
+ }
+ async check(items,slot){
+  const now=Date.now(),head=await this.db.prepare('SELECT revision FROM service_state WHERE id=1').first();
+  if(!this.quoteCache||this.quoteCache.revision!==head.revision||this.quoteCache.until<=now){
+   const {state,revision}=await this.read();clean(state,now);
+   // A revision-checked projection avoids parsing/rendering historical orders for every basket.
+   const totals={};for(const o of state.orders)if(o.status!=='CANCELLED'&&state.slots.includes(o.slot))totals[o.slot]=(totals[o.slot]||0)+count(o.items);
+   state.orders=Object.entries(totals).map(([slot,n])=>({slot:Number(slot),status:'QUEUED',items:{marg:n},ingredients:{}}));state.receipts={};
+   this.quoteCache={state,revision,until:Math.min(now+1000,...Object.values(state.holds).map(h=>h.expires))};
+  }
+  const {state,revision}=this.quoteCache;return {...checkBasket(state,items,slot,now),revision};
  }
  async get(visitorId,role='client'){const {state,revision}=await this.read();return this.view(state,visitorId,revision,role);}
  validateId(requestId){if(typeof requestId!=='string'||!/^[a-f0-9-]{36}$/.test(requestId))throw new AppError('Identifiant de requête invalide.',400);}

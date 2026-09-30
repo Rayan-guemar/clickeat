@@ -55,3 +55,37 @@ test('anonymous cookie retains identity and another visitor gets a different ID'
  const again=await handler(new Request('http://localhost/api/state',{headers:{cookie}}));assert.equal((await again.json()).clientId,one.clientId);
  const different=await handler(new Request('http://localhost/api/state'));assert.notEqual((await different.json()).clientId,one.clientId);
 });
+
+test('cumulative ingredients, slot overrides and next feasible slot',async()=>{
+ const repo=new Repository(database());await repo.init();await repo.mutate('m',id(),'stock',{id:'dough',qty:1});const s=await repo.get('a');
+ assert.equal((await repo.check({marg:1},s.slots[0])).ok,true);
+ assert.equal((await repo.check({regina:1},s.slots[0])).ok,true);
+ assert.equal((await repo.check({marg:1,regina:1},s.slots[0])).stockOK,false);
+ await assert.rejects(repo.mutate('a',id(),'reserve',{items:{marg:1,regina:1},slot:s.slots[0]}),/Stock insuffisant/);
+ await repo.mutate('m',id(),'slot_capacity',{slot:s.slots[0],capacity:0});
+ const check=await repo.check({marg:1},s.slots[0]);assert.equal(check.ok,false);assert.equal(check.nextSlot,s.slots[1]);
+ await repo.mutate('m',id(),'slot_capacity',{slot:s.slots[1],capacity:1});await repo.mutate('a',id(),'reserve',{items:{marg:1},slot:s.slots[1]});
+ await repo.mutate('m',id(),'slot_capacity',{slot:s.slots[1],capacity:0});const h=(await repo.get('a')).hold;await repo.mutate('a',id(),'pay',{reservationId:h.id,name:'A'});
+ assert.equal((await repo.get('a')).orders.length,1);
+ await repo.mutate('m',id(),'slot_capacity',{slot:s.slots[0],capacity:null});assert.equal((await repo.get('a')).slotCapacities[s.slots[0]],undefined);
+ await assert.rejects(repo.mutate('m',id(),'slot_capacity',{slot:s.slots[0],capacity:-1}));
+});
+test('catalog editing freezes held prices and BOM; archive, creation and conflicts',async()=>{
+ const repo=new Repository(database());await repo.init();const s=await repo.get('m','manager'),r=s.catalog[0];
+ await repo.mutate('a',id(),'reserve',{items:{marg:2},slot:s.slots[0]});const hold=(await repo.get('a')).hold;
+ await repo.mutate('m',id(),'catalog',{version:0,recipe:{...r,name:'Nouvelle',price:20,bom:{dough:2,box:1},active:true}});
+ await assert.rejects(repo.mutate('m',id(),'catalog',{version:0,recipe:{...r,active:true}}),/changé/);
+ await repo.mutate('a',id(),'pay',{reservationId:hold.id,name:'A'});const order=(await repo.get('a')).orders[0];assert.equal(order.totalCents,2200);assert.equal(order.lines[0].name,'Margherita');assert.equal(order.ingredients,undefined);assert.equal((await repo.get('m','manager')).stock.dough.qty,418);
+ await repo.mutate('m',id(),'cancel',{id:order.id});assert.equal((await repo.get('m','manager')).stock.dough.qty,420);
+ await repo.mutate('m',id(),'catalog',{version:1,recipe:{...r,active:false}});await assert.rejects(repo.check({marg:1},s.slots[0]),/inconnue/);
+ await repo.mutate('m',id(),'catalog',{version:2,recipe:{...r,id:'speciale',active:true}});assert.equal((await repo.check({speciale:1},s.slots[0])).ok,true);
+ await assert.rejects(repo.mutate('m',id(),'catalog',{version:3,recipe:{...r,active:true,bom:{unknown:2}}}),/inconnu/);
+ assert.equal((await repo.get('a')).catalog[0].bom,undefined);
+});
+test('basket endpoint is read-only and catalog actions require owner',async()=>{
+ const handle=api(database());const s=await (await handle(new Request('http://localhost/api/state'))).json();
+ const req=(path,body)=>handle(new Request('http://localhost'+path,{method:'POST',headers:{Origin:'http://localhost','X-Click-Eat':'1','Content-Type':'application/json'},body:JSON.stringify(body)}));
+ const response=await req('/api/check',{payload:{items:{marg:1,regina:1},slot:s.slots[0]}});assert.equal(response.status,200);assert.equal((await response.json()).ok,true);
+ assert.equal((await req('/api/action',{action:'catalog',payload:{},requestId:id()})).status,403);
+ const after=await (await handle(new Request('http://localhost/api/state'))).json();assert.equal(after.revision,s.revision);assert.equal(after.reservationQueue.length,0);
+});
