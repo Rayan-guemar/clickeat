@@ -1,0 +1,40 @@
+services:
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:${CLICK_EAT_PORT:-4173}:4173"
+    environment:
+      PILOTAGE_PASSWORD: ${PILOTAGE_PASSWORD:?Définissez PILOTAGE_PASSWORD dans .env (16 caractères minimum)}
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: clickeat
+      PGUSER: clickeat
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Définissez POSTGRES_PASSWORD dans .env}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+  db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: clickeat
+      POSTGRES_USER: clickeat
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Définissez POSTGRES_PASSWORD dans .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clickeat -d clickeat"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    stop_grace_period: 30s
+volumes:
+  postgres-data:

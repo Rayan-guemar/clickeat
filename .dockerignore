@@ -1,0 +1,15 @@
+**
+!Dockerfile
+!backend/
+!backend/*.py
+!backend/requirements.txt
+!backend/seed.json
+!backend/migrations/
+!backend/migrations/*.sql
+!dist/
+!dist/index.html
+!dist/style.css
+!dist/app.js
+!dist/server-client.js
+!dist/sw.js
+!dist/pizza.jpg

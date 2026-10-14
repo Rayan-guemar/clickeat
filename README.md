@@ -1,3 +1,9 @@
+> **Serveur autonome actuel : Python / FastAPI + PostgreSQL.**
+> Le démarrage Docker utilise deux services (`app` et `db`) : voir [le guide Docker](docs/DOCKER.md).
+> Le dossier `backend/` contient l'API Python et les migrations PostgreSQL.
+> Les anciens fichiers `server/*.mjs`, `db/` et `drizzle/` sont conservés pour la version Sites déjà publiée ; ils ne sont pas utilisés dans les conteneurs.
+> Le passage à PostgreSQL ne migre pas automatiquement les données SQLite/D1 et ne certifie pas l'objectif de 1 000 clients simultanés.
+
 # Spécifications Fonctionnelles Générales — Application Click & Collect Pizzeria Haute Cadence
 
 > **Périmètre & Enjeux :** Système de commande Click & Collect, moteur d'allocation capacitaire temps réel, gestion fine des stocks d'ingrédients (BOM) et ordonnanceur de production cuisine avec validation manuelle.  
@@ -155,63 +161,36 @@ Puisque les fours ne transmettent aucune donnée, l'outil sert de **guide de tra
   * Interface épurée avec contrastes élevés, conçue pour être manipulée d'un seul doigt sans manipulation fine (grosses tuiles de commande).
 * **Résilience Réseau Local :**
   * L'écran de cuisine continue de fonctionner et de stocker les clics manuels même en cas de micro-coupure internet, puis se synchronise dès le rétablissement de la connexion.
-# Click Eat — prototype interactif
-# Click Eat — serveur et base de données
 
-## Démarrage local
+# Application actuelle : FastAPI + PostgreSQL
 
-Node.js >= 22.13 (Node 24 conseillé), sans dépendance npm externe.
+Les spécifications ci-dessus sont les objectifs fonctionnels ; elles ne constituent pas une certification de conformité ou de charge.
 
-```sh
-npm start
-```
+Le backend autonome est dans `backend/`. Il utilise FastAPI/Uvicorn, Psycopg et un service PostgreSQL séparé. L'interface client et le pilotage existants sont servis par Python. Docker n'embarque ni le serveur Node.js ni SQLite.
 
-Ouvrir http://127.0.0.1:4173. Le serveur HTTP fournit l’interface et l’API. La base SQLite persistante est créée dans `data/click-eat.sqlite` (ignorée par Git). `PORT`, `HOST` et `DATA_DIR` sont configurables. L’écoute est limitée à la machine locale par défaut. Ne pas exposer ce serveur directement sur Internet sans authentification et HTTPS.
+## Démarrage
 
-## Deux espaces et autorisations
+Suivre [le guide Docker étape par étape](docs/DOCKER.md) : préparer `.env` avec deux mots de passe puis exécuter `docker compose up -d --build`.
 
-- `/` (ou `/client`) : boutique client, panier, réservation et suivi de ses propres commandes. Aucun stock interne, autre client ou historique général n’est envoyé à cette API.
-- `/pilotage` : tableau de bord, commandes, cuisine, stocks, capacité et historique des numéros de passage. L’API `/api/pilotage/*` vérifie sur chaque requête l’identité ChatGPT fournie par Sites et l’adresse propriétaire configurée dans `PILOTAGE_OWNER_EMAIL`. Un lien ou une modification de l’interface ne donne pas accès aux opérations de gestion.
-- La boutique utilise `/api/state` et `/api/action` ; seuls `reserve`, `release` et `pay` y sont autorisés.
-- Le site conserve son audience privée actuelle. Rendre la boutique publique nécessite un changement explicite de l’audience Sites ; la protection propriétaire du pilotage reste applicable.
-- Le serveur local ne fait pas confiance aux en-têtes d’identité reçus d’un navigateur : le pilotage y est donc fermé par défaut. Les tests API émulent le transport authentifié Sites.
+- Boutique : http://localhost:4173/
+- Pilotage : http://localhost:4173/pilotage ; utilisateur `admin`, mot de passe `PILOTAGE_PASSWORD`.
+- Base PostgreSQL : service privé `db`, volume persistant `postgres-data`.
 
-## Identifiants et priorité
+## Fonctionnalités conservées
 
-Chaque client reçoit un UUID opaque enregistré dans `visitors`. Pour un visiteur connecté, il est lié à son identité ChatGPT stable pour ce site ; pour un visiteur anonyme, il est lié au cookie HttpOnly. Effacer les cookies anonymes ou changer de navigateur crée un autre visiteur. L’identifiant visible n’est jamais une preuve d’authentification.
+Catalogue modifiable, composition des recettes, stock cumulé, quotas par créneau, réservations de cinq minutes, suivi client, cuisine manuelle et reprise des actions. Les prix et ingrédients sont figés lors de la réservation. Paiements et notifications restent simulés.
 
-Une réservation reçoit un numéro `sequence` attribué atomiquement par SQLite/D1 dans `reservation_queue`. L’ordre de priorité est celui de l’enregistrement en base, pas celui de la création du compte ou d’un horodatage envoyé par le client. Même si un traitement plus récent s’exécute plus vite, il doit traiter le premier ticket non traité avant le sien. Le contrôle de stock, la décision de réservation et l’avancement du curseur sont validés par une seule mise à jour atomique de révision.
+Les mutations sont des tickets idempotents persistants, traités en FIFO dans des transactions PostgreSQL. Les verrous fonctionnent entre processus ; les lectures utilisent des instantanés cohérents. Le compte propriétaire est protégé par HTTP Basic en local ; HTTPS est nécessaire avant exposition Internet.
 
-Le pilotage montre le numéro, le client, l’heure de réception et la décision initiale des 30 dernières demandes. Le client voit seulement son propre numéro. Les réservations restent limitées à cinq minutes ; les refus et les reprises sont idempotents. Une décision ancienne ne donne pas droit à un nouveau stock : il faut une nouvelle demande.
+## API et validation
 
-## Fonctionnement
+`GET /api/health`, `GET /api/state`, `POST /api/check`, `POST /api/action`, `GET /api/pilotage/state`, `POST /api/pilotage/action`.
+Les mutations nécessitent une origine autorisée et `X-Click-Eat: 1`. Les commandes privées sont filtrées selon le cookie HttpOnly du client. Le serveur ignore les en-têtes d'identité Sites fournis par le navigateur.
 
-- Le serveur est la source de vérité pour commandes, stocks, quotas, pauses et réservations par session.
-- Les validations utilisent un numéro de révision atomique, avec réessai en cas de modification concurrente : deux paniers ne peuvent pas réserver la dernière ressource simultanément.
-- Réservations de cinq minutes, expiration évaluée côté serveur à chaque lecture et écriture. Les réservations expirées ne consomment plus de capacité ou de stock.
-- Les requêtes ont un identifiant idempotent conservé sept jours : une répétition réseau ne crée pas une deuxième commande ou un deuxième passage en cuisine.
-- Les écrans actualisent les données toutes les deux secondes. Les actions cuisine sans réseau sont conservées dans une file locale et réessayées. Un conflit de statut est signalé au lieu d’avancer deux fois.
-- Le paiement demeure simulé. Aucun SMS ou remboursement réel n’est envoyé.
-- La base démarre sans commande fictive, avec les stocks de départ du prototype. Les anciennes données locales ne sont pas importées automatiquement.
+Dans un environnement Python activé : `pip install -r backend/requirements-dev.txt`, puis `python -m pytest`. Définir `TEST_DATABASE_URL` pour les tests d'intégration PostgreSQL. Voir [le rapport de migration](docs/MIGRATION-FASTAPI.md).
 
-## API
+Le seuil de 200 ms à 1 000 clients n'est pas validé. Le passage à PostgreSQL ne suffit pas à garantir cette performance ; les écritures métier sont encore sérialisées et certaines lectures chargent l'ensemble des commandes.
 
-`GET /api/health`, `GET /api/state`, `POST /api/action`.
+## Version Sites précédente
 
-Le POST reçoit `{requestId, action, payload}`. Actions : `reserve`, `release`, `pay`, `advance`, `delay`, `cancel`, `stock`, `capacity`, `pause`. Les mutations nécessitent une origine identique, le type JSON et l’en-tête `X-Click-Eat: 1`. Session navigateur dans un cookie HttpOnly, SameSite=Strict et Secure sous HTTPS.
-
-## Hébergement
-
-`npm run build` produit un Worker Cloudflare dans `dist/server/index.js` et les ressources navigateur dans `dist/client`. Le serveur utilise la liaison D1 `DB` pour la base et `ASSETS` pour les ressources. Sites conserve son accès privé. Les migrations versionnées dans `drizzle/` créent le schéma avant publication. Le serveur local initialise le même schéma SQLite.
-
-Les tables `visitors` et `reservation_queue` stockent les identités et les numéros de passage avec des contraintes uniques et un index par visiteur. La base utilise également une ligne `service_state` avec contenu JSON, numéro de révision et comparaison atomique de révision. Cette première implémentation garantit la cohérence du prototype ; elle n’est pas une validation de la charge cible. Une normalisation des tables et des essais de charge sont nécessaires pour l’objectif de 4 000 commandes/soir et 1 000 visiteurs concurrents. Le mécanisme actuel transfère un instantané complet du service et ne repose pas sur WebSockets.
-
-Le pilotage est réservé au compte propriétaire de la pizzeria. La délégation à plusieurs employés n’est pas encore configurée. Les prix et recettes restent fixes, les quotas sont globaux et les retards ne réordonnancent pas toute la capacité.
-
-## Vérification
-
-`npm test` : concurrence, réservations, expiration, paiement idempotent, protection des sessions, cycle cuisine, validation des entrées et persistance.
-
-## Photo
-
-Jemima Whyles / Unsplash : https://unsplash.com/photos/a-pizza-sitting-in-a-stone-oven-with-flames-coming-out-of-it-KUdkIGMGnhM (licence Unsplash).
+Le site déjà publié n'est pas remplacé par ce travail local. Son serveur et ses migrations sont conservés, mais exclus des conteneurs : [archive technique](docs/LEGACY-SITES.md). L'import des anciennes données SQLite/D1 dans PostgreSQL n'est pas automatique.

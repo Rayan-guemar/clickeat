@@ -1,6 +1,7 @@
 import {Repository} from './repository.mjs';
 import {AppError} from './domain.mjs';
 export async function identity(request,options={}){
+ if(options.resolveIdentity)return options.resolveIdentity(request);
  const id=options.trustPlatform?request.headers.get('oai-authenticated-user-id'):null;
  const email=options.trustPlatform?request.headers.get('oai-authenticated-user-email')?.toLowerCase():null;
  const manager=Boolean(id&&email&&options.ownerEmail&&email===options.ownerEmail.toLowerCase());

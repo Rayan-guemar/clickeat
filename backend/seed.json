@@ -1,0 +1,108 @@
+{
+  "stock": {
+    "dough": {
+      "name": "Pâtons",
+      "qty": 420,
+      "unit": "pièces",
+      "alert": 50
+    },
+    "tomato": {
+      "name": "Sauce tomate",
+      "qty": 19000,
+      "unit": "g",
+      "alert": 2000
+    },
+    "mozza": {
+      "name": "Mozzarella",
+      "qty": 14000,
+      "unit": "g",
+      "alert": 2000
+    },
+    "ham": {
+      "name": "Jambon blanc",
+      "qty": 6000,
+      "unit": "g",
+      "alert": 1000
+    },
+    "mushroom": {
+      "name": "Champignons",
+      "qty": 2800,
+      "unit": "g",
+      "alert": 3000
+    },
+    "burrata": {
+      "name": "Burrata",
+      "qty": 8,
+      "unit": "pièces",
+      "alert": 12
+    },
+    "cheese": {
+      "name": "Mélange fromages",
+      "qty": 6500,
+      "unit": "g",
+      "alert": 1000
+    },
+    "box": {
+      "name": "Boîtes à pizza",
+      "qty": 480,
+      "unit": "pièces",
+      "alert": 100
+    }
+  },
+  "catalog": [
+    {
+      "id": "marg",
+      "name": "Margherita",
+      "desc": "Tomate San Marzano, mozzarella fior di latte, basilic frais.",
+      "price": 11,
+      "bom": {
+        "dough": 1,
+        "tomato": 100,
+        "mozza": 100,
+        "box": 1
+      },
+      "tag": "La grande classique"
+    },
+    {
+      "id": "regina",
+      "name": "Regina",
+      "desc": "Tomate, mozzarella, jambon blanc, champignons frais.",
+      "price": 14,
+      "bom": {
+        "dough": 1,
+        "tomato": 100,
+        "mozza": 100,
+        "ham": 80,
+        "mushroom": 60,
+        "box": 1
+      },
+      "tag": "La préférée du quartier"
+    },
+    {
+      "id": "burrata",
+      "name": "Burrata",
+      "desc": "Tomate, burrata crémeuse, roquette et huile d’olive.",
+      "price": 16,
+      "bom": {
+        "dough": 1,
+        "tomato": 100,
+        "burrata": 1,
+        "box": 1
+      },
+      "tag": "La généreuse"
+    },
+    {
+      "id": "quattro",
+      "name": "Quattro formaggi",
+      "desc": "Mozzarella, gorgonzola, chèvre et parmesan.",
+      "price": 15,
+      "bom": {
+        "dough": 1,
+        "mozza": 100,
+        "cheese": 100,
+        "box": 1
+      },
+      "tag": "Pour les amateurs de fromage"
+    }
+  ]
+}
